@@ -1,0 +1,37 @@
+## OS generated files
+*.DS_Store
+._*
+
+## Byte-compiled / optimized / DLL files
+**/__pycache__/
+**/.vscode/
+**/results/
+**/diffusion_with_time
+**/power_sched_results*
+**/power_sched/power_sched_results*
+**/power_sched/power_sched*
+**/wandb
+**/power_sched/wandb
+**/stock_portfolio_results*
+**/stock_portfolio_results_50
+**/stock_portfolio/wandb
+**/wandb_logs
+**/*.sh
+*.py[cod]
+*$py.class
+
+**/data
+**/sp500.zip
+**/toy_results
+**/toy_example/toy_results*
+**/toy_example_new/toy_results*
+**/motivated_example*
+**/synthetic_example/synthetic_results*
+**/synthetic_example/toy_results*
+**/synthetic_example_old
+**/toy_example
+**/toy_example_new
+**/power_sched_copy
+**/battery_storage
+**/newsvendor
+**/*.pdf
