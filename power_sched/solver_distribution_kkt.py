@@ -22,7 +22,7 @@ import wandb
 
 
 class DiffusionCvxpyModule(torch.nn.Module):
-    def __init__(self, diffusion, params, mc_samples, num_iter=None, distr_est=True, resample=False):
+    def __init__(self, diffusion, params, mc_samples, num_iter=100, distr_est=True, resample=False):
         super().__init__()
         self.diffusion = diffusion
         # self.pretrain_diffusion = copy.deepcopy(self.diffusion)

@@ -50,13 +50,34 @@ if __name__ == '__main__':
     parser.add_argument('--use_distr_est', action='store_true', default=False, help='use distributional estimation')
 
     parser.add_argument('--seed', type=int, default=2, metavar='seed', help='random seed')
-
+    parser.add_argument('--use_wandb', action='store_true', default=False, help='use wandb')
     args = parser.parse_args()
 
-    if args.use_distr_est:
-        from solver_distribution_kkt import DiffusionCvxpyModule
-    else:
-        from solver_reparam import DiffusionCvxpyModule
+    time_str = dt.now().strftime("%Y%m%d_%H%M%S")
+    
+    use_wandb = getattr(args, "use_wandb", False)
+    if not use_wandb:
+        os.environ["WANDB_DISABLED"] = "true" 
+        os.environ["WANDB_MODE"] = "disabled"
+        wandb.init   = lambda *a, **k: None
+        wandb.log    = lambda *a, **k: None
+        wandb.finish = lambda *a, **k: None
+        wandb.watch  = lambda *a, **k: None
+        wandb.define_metric = lambda *a, **k: None
+    else:        
+        wandb.login(key=YOUR_WANDB_API_KEY)
+        if args.use_distr_est and args.task == "diffusion":
+            if not os.path.exists(f"wandb/stock_portfolio_diffusion_distr_est"):
+                os.makedirs(f"wandb/stock_portfolio_diffusion_distr_est")
+            wandb.init(project=f"stock_portfolio_diffusion_distr_est", name=f"diffusion_distr_est_{time_str}", config=vars(args), dir=f"wandb/stock_portfolio_diffusion_distr_est")
+        elif not args.use_distr_est and args.task == "diffusion":
+            if not os.path.exists(f"wandb/stock_portfolio_diffusion_point_est"):
+                os.makedirs(f"wandb/stock_portfolio_diffusion_point_est")
+            wandb.init(project=f"stock_portfolio_diffusion_point_est", name=f"diffusion_point_est_{time_str}", config=vars(args), dir=f"wandb/stock_portfolio_diffusion_point_est")
+        else:
+            if not os.path.exists(f"wandb/stock_portfolio_{args.task}"):
+                os.makedirs(f"wandb/stock_portfolio_{args.task}")
+            wandb.init(project=f"stock_portfolio_{args.task}", name=f"{args.task}_{time_str}", config=vars(args), dir=f"wandb/stock_portfolio_{args.task}")
 
     portfolio_opt_dir = os.path.abspath(os.path.dirname(__file__))
     print("portfolio_opt_dir:", portfolio_opt_dir)
@@ -68,20 +89,12 @@ if __name__ == '__main__':
                                 collapse="daily",
                                 overwrite=False,
                                 verbose=True)
-    time_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    wandb.login(key=YOUR_WANDB_API_KEY)
-    if args.use_distr_est and args.task == "diffusion":
-        if not os.path.exists(f"wandb/stock_portfolio_diffusion_distr_est"):
-            os.makedirs(f"wandb/stock_portfolio_diffusion_distr_est")
-        wandb.init(project=f"stock_portfolio_diffusion_distr_est", name=f"diffusion_distr_est_{time_str}", config=vars(args), dir=f"wandb/stock_portfolio_diffusion_distr_est")
-    elif not args.use_distr_est and args.task == "diffusion":
-        if not os.path.exists(f"wandb/stock_portfolio_diffusion_point_est"):
-            os.makedirs(f"wandb/stock_portfolio_diffusion_point_est")
-        wandb.init(project=f"stock_portfolio_diffusion_point_est", name=f"diffusion_point_est_{time_str}", config=vars(args), dir=f"wandb/stock_portfolio_diffusion_point_est")
+
+    if args.use_distr_est:
+        from solver_distribution_kkt import DiffusionCvxpyModule
     else:
-        if not os.path.exists(f"wandb/stock_portfolio_{args.task}"):
-            os.makedirs(f"wandb/stock_portfolio_{args.task}")
-        wandb.init(project=f"stock_portfolio_{args.task}", name=f"{args.task}_{time_str}", config=vars(args), dir=f"wandb/stock_portfolio_{args.task}")
+        from solver_reparam import DiffusionCvxpyModule
+    
     setproctitle.setproctitle('stock_portfolio')
 
     filepath = args.filepath

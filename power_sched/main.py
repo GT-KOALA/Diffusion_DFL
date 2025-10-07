@@ -50,23 +50,35 @@ def main():
 
     parser.add_argument('--seed', type=int, default=0, metavar='seed', help='random seed')
     parser.add_argument('--interval', type=int, default=1, metavar='interval', help='interval for replay buffer')
+    parser.add_argument('--use_wandb', action='store_true', default=False, help='use wandb')
     args = parser.parse_args()
 
     time_str = dt.now().strftime("%Y%m%d_%H%M%S")
-    wandb.login(key=YOUR_WANDB_API_KEY)
-
-    if args.task == "diffusion" and args.use_distr_est:
-        if not os.path.exists(f"wandb/ps_diffusion_distr_est"):
-            os.makedirs(f"wandb/ps_diffusion_distr_est")
-        wandb.init(project=f"ps_diffusion_distr_est", name=f"diffusion_distr_est_{time_str}", config=vars(args), dir=f"wandb/ps_diffusion_distr_est")
-    elif args.task == "diffusion" and not args.use_distr_est:
-        if not os.path.exists(f"wandb/ps_diffusion_point_est"):
-            os.makedirs(f"wandb/ps_diffusion_point_est")
-        wandb.init(project=f"ps_diffusion_point_est", name=f"diffusion_point_est_{time_str}", config=vars(args), dir=f"wandb/ps_diffusion_point_est")
+    
+    use_wandb = getattr(args, "use_wandb", False)
+    if not use_wandb:
+        os.environ["WANDB_DISABLED"] = "true" 
+        os.environ["WANDB_MODE"] = "disabled"
+        wandb.init   = lambda *a, **k: None
+        wandb.log    = lambda *a, **k: None
+        wandb.finish = lambda *a, **k: None
+        wandb.watch  = lambda *a, **k: None
+        wandb.define_metric = lambda *a, **k: None
     else:
-        if not os.path.exists(f"wandb/ps_{args.task}"):
-            os.makedirs(f"wandb/ps_{args.task}")
-        wandb.init(project=f"ps_{args.task}", name=f"{args.task}_{time_str}", config=vars(args), dir=f"wandb/ps_{args.task}")
+        wandb.login(key=YOUR_WANDB_API_KEY)
+
+        if args.task == "diffusion" and args.use_distr_est:
+            if not os.path.exists(f"wandb/ps_diffusion_distr_est"):
+                os.makedirs(f"wandb/ps_diffusion_distr_est")
+            wandb.init(project=f"ps_diffusion_distr_est", name=f"diffusion_distr_est_{time_str}", config=vars(args), dir=f"wandb/ps_diffusion_distr_est")
+        elif args.task == "diffusion" and not args.use_distr_est:
+            if not os.path.exists(f"wandb/ps_diffusion_point_est"):
+                os.makedirs(f"wandb/ps_diffusion_point_est")
+            wandb.init(project=f"ps_diffusion_point_est", name=f"diffusion_point_est_{time_str}", config=vars(args), dir=f"wandb/ps_diffusion_point_est")
+        else:
+            if not os.path.exists(f"wandb/ps_{args.task}"):
+                os.makedirs(f"wandb/ps_{args.task}")
+            wandb.init(project=f"ps_{args.task}", name=f"{args.task}_{time_str}", config=vars(args), dir=f"wandb/ps_{args.task}")
 
     if args.use_distr_est:
         if args.task == "diffusion_replay":
