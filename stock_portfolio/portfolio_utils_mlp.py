@@ -19,7 +19,7 @@ import argparse
 import tqdm
 import time
 import datetime as dt
-from model import GaussianMLP, MLP
+from model import GaussianMLP, MLP, PortfolioPolicyNet
 import torch.nn as nn
 
 import torch.utils.data as data_utils
@@ -118,7 +118,7 @@ def run_rmse_net(model, pretrain_loader, pretrain_validate_loader, pretrain_opti
                 sigma = torch.exp(logvar)
                 loss_fn = nn.GaussianNLLLoss(full=True, reduction='mean')
                 train_loss = loss_fn(mu, labels, sigma)
-            elif isinstance(model, MLP):
+            elif isinstance(model, MLP) or isinstance(model, PortfolioPolicyNet):
                 model.train()
                 train_loss = nn.MSELoss()(
                     model(features), labels)
@@ -133,7 +133,7 @@ def run_rmse_net(model, pretrain_loader, pretrain_validate_loader, pretrain_opti
             sigma = torch.exp(logvar)
             loss_fn = nn.GaussianNLLLoss(full=True, reduction='mean')
             test_loss = loss_fn(mu, labels, sigma)
-        elif isinstance(model, MLP):
+        elif isinstance(model, MLP) or isinstance(model, PortfolioPolicyNet):
             model.eval()
             test_loss = nn.MSELoss()(
                 model(features), labels)
@@ -404,3 +404,61 @@ def eval_net(which, model, train_loader, test_loader, params, save_folder, mc_sa
                 os.path.join(save_folder, '{}_test_task'.format(which)))
             
             print(f"train_dfl = {train_dfl:.4f}, train_rmse = {train_rmse:.4f}, test_dfl = {test_dfl:.4f}, test_rmse = {test_rmse:.4f}")
+    elif isinstance(model, PortfolioPolicyNet):
+        device = next(model.parameters()).device
+
+        with torch.no_grad():
+            model.eval()
+            train_rmse_list = []
+            train_dfl_list = []
+            for batch_idx, (features, covariance_mat, labels) in enumerate(train_loader):
+                features, covariance_mat, labels = features.float().to(device), covariance_mat.float().to(device), labels.float().to(device)
+                features = features.reshape(-1, params["x_dim"])
+                labels = labels.reshape(-1, params["n"])
+
+                y_preds_train = model(features)
+
+                train_rmse = rmse_loss(y_preds_train, labels)
+                train_rmse_list.append(train_rmse)
+
+                train_loss_task = _dfl_loss_linear(
+                    labels, y_preds_train)
+                train_dfl_list.append(train_loss_task.item())
+            
+            train_rmse = np.mean(train_rmse_list)
+            train_dfl = np.mean(train_dfl_list)
+
+            test_rmse_list = []
+            test_dfl_list = []
+            for batch_idx, (features, covariance_mat, labels) in enumerate(test_loader):
+                features, covariance_mat, labels = features.float().to(device), covariance_mat.float().to(device), labels.float().to(device)
+                features = features.reshape(-1, params["x_dim"])
+                labels = labels.reshape(-1, params["n"])
+
+                y_preds_test = model(features)
+
+                test_rmse = rmse_loss(y_preds_test, labels)
+                test_rmse_list.append(test_rmse)
+
+                test_loss_task = _dfl_loss_linear(
+                    labels, y_preds_test)
+                test_dfl_list.append(test_loss_task.item())
+
+            test_rmse = np.mean(test_rmse_list)
+            test_dfl = np.mean(test_dfl_list)
+
+            with open(
+                os.path.join(save_folder, '{}_train_rmse'.format(which)), 'wb') as f:
+                np.save(f, train_rmse)
+
+            with open(
+                os.path.join(save_folder, '{}_test_rmse'.format(which)), 'wb') as f:
+                np.save(f, test_rmse)
+            
+            torch.save(train_dfl, 
+                os.path.join(save_folder, '{}_train_task'.format(which)))
+            torch.save(test_dfl, 
+                os.path.join(save_folder, '{}_test_task'.format(which)))
+            print(f"train_dfl = {train_dfl:.4f}, train_rmse = {train_rmse:.4f}, test_dfl = {test_dfl:.4f}, test_rmse = {test_rmse:.4f}")
+    else:
+        raise ValueError(f"Model type {type(model)} not supported")

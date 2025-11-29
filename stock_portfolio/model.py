@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from utils import computeCovariance
 
 def linear_block(in_channels, out_channels, activation='ReLU'):
@@ -78,3 +79,23 @@ class GaussianMLP(nn.Module):
         mu = self.mu_head(h)                   # (B, n)
         logvar = self.logvar_head(h)           # (B, n)
         return mu, logvar
+
+class PortfolioPolicyNet(nn.Module):
+    def __init__(self, x_dim: int, n: int, hidden=(1024, 1024)):
+        super().__init__()
+        layers = []
+        in_dim = x_dim
+        for h in hidden:
+            layers += [
+                nn.Linear(in_dim, h),
+                nn.BatchNorm1d(h),
+                nn.ReLU(),
+            ]
+            in_dim = h
+        self.backbone = nn.Sequential(*layers)
+        self.head = nn.Linear(in_dim, n)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        logits = self.head(self.backbone(x))
+        z = F.softmax(logits, dim=-1)
+        return z

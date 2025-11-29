@@ -22,6 +22,8 @@ import torch
 import model_classes, nets, plot
 from constants import *
 from solver_mlp import MLPCvxpyModule, MLPCvxpyModule_distr
+from CNF import CNF_model
+from policy_learning import run_policy_net
 
 import sys
 sys.path.append('.')
@@ -65,7 +67,7 @@ def main():
         wandb.watch  = lambda *a, **k: None
         wandb.define_metric = lambda *a, **k: None
     else:
-        wandb.login(key=YOUR_WANDB_API_KEY)
+        wandb.login(key=YOUR_WANDB_API_KEY) # see constants.py
 
         if args.task == "diffusion" and args.use_distr_est:
             if not os.path.exists(f"wandb/ps_diffusion_distr_est"):
@@ -156,6 +158,12 @@ def main():
             print("--------------------------------")
             model_rmse_weighted = nets.run_weighted_rmse_net(X_train, Y_train, X_test, Y_test, params)
             nets.eval_net("weighted_rmse_net", model_rmse_weighted, variables_rmse, params, save_folder)
+        elif args.task == "policy_learning":
+            print("--------------------------------")
+            print("Run policy learning.")
+            print("--------------------------------")
+            model = run_policy_net(X_train_, Y_train_, X_test_, Y_test_, params)
+            nets.eval_net("policy_learning", model, variables_rmse, params, save_folder)
         else:
             th_frac = 0.8
             inds = np.random.permutation(X_train.shape[0])
@@ -407,6 +415,12 @@ def main():
                 layer_reparam = DiffusionCvxpyModule_reparam(diffusion, params, args.mc_samples, distr_est=False, resample=False)
                 which = f"diffusion_grad_comparison"
                 nets.run_task_net_diffusion(diffusion, train_loader, hold_loader, test_loader, layer_distr_10, params, args, which=which, other_layers={'layer_distr_10': layer_distr_10, 'layer_distr_50': layer_distr_50, 'layer_distr_100': layer_distr_100, 'layer_distr_500': layer_distr_500, 'layer_resample': layer_resample, 'layer_reparam': layer_reparam}, save_folder=save_folder)
+            elif args.task == "cnf":
+                print("--------------------------------")
+                print("Run task net with CNF.")
+                print("--------------------------------")
+                CNF = CNF_model(x_dim=X_train2_.shape[1], y_dim=Y_train2_.shape[1], device=DEVICE)
+                CNF.pretrain_CNF(X_train2_, Y_train2_, X_hold2_, Y_hold2_, base_save, args)
         
     # plot.plot_results(map(
     #     lambda x: os.path.join(base_save, str(x)), range(args.nRuns)), base_save)

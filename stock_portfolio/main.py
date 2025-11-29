@@ -19,12 +19,13 @@ from cvxpylayers.torch import CvxpyLayer
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from data_utils import SP500DataLoader, generateDataset
-from model import PortfolioModel, CovarianceModel, MLP, GaussianMLP
+from model import PortfolioModel, CovarianceModel, MLP, GaussianMLP, PortfolioPolicyNet
 from diffusion_opt import Diffsion
 from solver_distribution_kkt import DiffusionCvxpyModule
 from solver_mlp import MLPCvxpyModule, MLPCvxpyModule_distr
 from portfolio_utils_diffusion import train_portfolio_diffusion, validate_portfolio_diffusion, test_portfolio_diffusion, eval_diffusion
 from portfolio_utils_mlp import train_portfolio_mlp, validate_portfolio_mlp, test_portfolio_mlp, run_rmse_net, eval_net
+from portfolio_utils_policy import train_portfolio_policy, validate_portfolio_policy, test_portfolio_policy
 from portfolio_utils import train_portfolio, validate_portfolio, test_portfolio
 from utils import normalize_matrix, normalize_matrix_positive, normalize_vector, normalize_matrix_qr, normalize_projection 
 
@@ -33,7 +34,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Portfolio Optimization')
     parser.add_argument('--filepath', type=str, default='', help='filename under folder results')
     parser.add_argument('--task', type=str, default='diffusion', help='rmse, weighted_rmse, task_net, task_net_ns, diffusion, diffusion_resample, two_stage_mlp, two_stage_gaussian, two_stage_diffusion, task_net_mlp_gaussian_qp, task_net_gaussian_reparam, task_net_gaussian_distr, task_net_deterministic_mlp')
-    parser.add_argument('--method', type=str, default='decision-focused', help='rmse, weighted_rmse, task_net, task_net_ns, diffusion, two_stage_mlp, two_stage_diffusion, task_net_mlp_gaussian_qp, task_net_deterministic_mlp')
     parser.add_argument('--nRuns', type=int, default=5, metavar='runs', help='number of runs')
 
     parser.add_argument('--T-size', type=int, default=10, help='the size of reparameterization metrix')
@@ -43,7 +43,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1e-4, help='learning rate')
     parser.add_argument('--batch_size', type=int, default=128, metavar='batch_size', help='batch size')
 
-    parser.add_argument('--cuda_device', type=int, default=7, help='cuda device')
+    parser.add_argument('--cuda_device', type=int, default=0, help='cuda device')
     parser.add_argument('--mc_samples', type=int, default=10, help='number of samples for distribution estimation')
     parser.add_argument('--pretrain_epochs', type=int, default=300, help='number of pretraining epochs')
 
@@ -53,7 +53,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_wandb', action='store_true', default=False, help='use wandb')
     args = parser.parse_args()
 
-    time_str = dt.now().strftime("%Y%m%d_%H%M%S")
+    time_str = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     
     use_wandb = getattr(args, "use_wandb", False)
     if not use_wandb:
@@ -114,7 +114,7 @@ if __name__ == '__main__':
     params["x_dim"] = feature_size
 
     device = f'cuda:{args.cuda_device}' if torch.cuda.is_available() else 'cpu'
-    base_save = f'stock_portfolio_results_{args.n}_2'
+    base_save = f'stock_portfolio_results_{args.n}'
     if not os.path.exists(base_save):
         os.makedirs(base_save)
     # if training_method != 'diffusion':
@@ -171,6 +171,15 @@ if __name__ == '__main__':
             if args.pretrain_epochs > 0:
                 model = run_rmse_net(model, pretrain_loader, pretrain_validate_loader, pretrain_optimizer, base_save, args, device)
             layer = MLPCvxpyModule(model, params, args.mc_samples)
+        elif "policy_learning" in training_method:
+            model = PortfolioPolicyNet(feature_size, n).to(device)
+            optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
+            pretrain_optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+            pretrain_loader, pretrain_validate_loader, pretrain_test_loader = generateDataset(sp500_data, n=n, num_samples=num_samples, batch_size=512)
+            if args.pretrain_epochs > 0:
+                model = run_rmse_net(model, pretrain_loader, pretrain_validate_loader, pretrain_optimizer, base_save, args, device)
+            layer = MLPCvxpyModule(model, params, args.mc_samples)
+            print("Training Policy Learning")
         else:
             raise ValueError('Not implemented')
 
@@ -196,7 +205,9 @@ if __name__ == '__main__':
             elif "mlp" in training_method or "gaussian" in training_method:
                 eval_net(training_method, model, train_loader, test_loader, params, save_folder, args.mc_samples)
                 # torch.save(model.state_dict(), f"{save_folder}/{training_method}-SEED{SEED}.pth")
-            continue        
+            continue     
+
+
         
         for epoch in range(-1, num_epochs):
             start_time = time.time()
@@ -209,6 +220,11 @@ if __name__ == '__main__':
                     continue
                 else:
                     train_loss, train_obj, (forward_time, inference_time, qp_time, backward_time) = train_portfolio_mlp(model, layer, optimizer, epoch, train_loader, params, device=device)
+            elif "policy_learning" in training_method:
+                if epoch == -1:
+                    continue
+                else:
+                    train_loss, train_obj, (forward_time, inference_time, qp_time, backward_time) = train_portfolio_policy(model, optimizer, epoch, train_loader, params, device=device)
             elif "gaussian" in training_method:
                 if epoch == -1:
                     # print('Testing the optimal solution...')
@@ -243,12 +259,16 @@ if __name__ == '__main__':
                 validate_loss, validate_obj = validate_portfolio_diffusion(model, layer, epoch, validate_loader, params, evaluate=evaluate, device=device)
             elif "mlp" in training_method or "gaussian" in training_method:
                 validate_loss, validate_obj = validate_portfolio_mlp(model, layer, epoch, validate_loader, params, evaluate=evaluate, device=device)
+            elif "policy_learning" in training_method:
+                validate_loss, validate_obj = validate_portfolio_policy(model, epoch, validate_loader, params, evaluate=evaluate, device=device)
 
             # ================== testing ===================
             if 'diffusion' in training_method:
                 test_loss, test_obj = test_portfolio_diffusion(model, layer, epoch, test_loader, params, evaluate=evaluate, device=device)
             elif 'mlp' in training_method or "gaussian" in training_method:
                 test_loss, test_obj = test_portfolio_mlp(model, layer, epoch, test_loader, params, evaluate=evaluate, device=device)
+            elif "policy_learning" in training_method:
+                test_loss, test_obj = test_portfolio_policy(model, epoch, test_loader, params, evaluate=evaluate, device=device)
 
             # =============== printing data ================
             sys.stdout.write(f'Epoch {epoch} | Train Loss:    \t {train_loss:.8f} \t | Train Objective Value:    \t {train_obj*100:.6f}% \n')

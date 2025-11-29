@@ -241,3 +241,14 @@ class SolveScheduling(nn.Module):
         dg = dg.to(z0.device)
         d2g = d2g.to(z0.device)
         return SolveSchedulingQP(self.params)(z0, mu, dg, d2g)
+
+class PolicyNet(nn.Module):
+    def __init__(self, x_dim, params):
+        super().__init__()
+        layer_sizes = [x_dim, 1024, 1024, params['n']]
+        layers = reduce(operator.add, [[nn.Linear(a,b), nn.ReLU()] for a,b in zip(layer_sizes[0:-2], layer_sizes[1:-1])])
+        layers += [nn.Linear(layer_sizes[-2], layer_sizes[-1])]
+        self.model = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.model(x)

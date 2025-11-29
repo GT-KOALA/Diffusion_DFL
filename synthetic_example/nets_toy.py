@@ -271,9 +271,14 @@ def _cos(u: torch.Tensor, v: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
                               dim=1, eps=1e-12).squeeze(0)
 
 # differentiable optimization with diffusion probability model
-def run_task_net_diffusion(diffusion, train_loader, hold_loader, test_loader, layer, params, args, which, save_folder, other_layers=None):
+def run_task_net_diffusion(model, train_loader, hold_loader, test_loader, layer, params, args, which, save_folder, other_layers=None):
     # opt = optim.AdamW(diffusion.model_net.parameters(), lr=args.lr, weight_decay=1e-3)
-    opt = optim.Adam(diffusion.model_net.parameters(), lr=args.lr)
+    if "diffusion" in which:
+        diffusion = model
+        opt = optim.Adam(diffusion.model_net.parameters(), lr=args.lr)
+    elif "cnf" in which:
+        cnf = model
+        opt = optim.Adam(cnf.flow.parameters(), lr=args.lr)
 
     best_val = float('inf')
     patience = 300
@@ -292,8 +297,12 @@ def run_task_net_diffusion(diffusion, train_loader, hold_loader, test_loader, la
     
     for epoch in range(epochs):
         time_start = time.time()
-        diffusion.model_net.train()
-        layer.diffusion.model_net.train()
+        if "diffusion" in which:
+            diffusion.model_net.train()
+            layer.diffusion.model_net.train()
+        elif "cnf" in which:
+            cnf.flow.train()
+            layer.cnf.flow.train()
         
         epoch_loss = 0
         grad_cnt = 0
@@ -388,34 +397,42 @@ def run_task_net_diffusion(diffusion, train_loader, hold_loader, test_loader, la
                     z_star = layer(x)
                 else:
                     z_star = layer(x, idx=idx, epoch=epoch)
-                diffusion_loss = 0.0
-                num_samples = 10
-                for _ in range(num_samples):
-                    t = torch.randint(0, diffusion.timesteps, (x.shape[0],), device=constants.DEVICE).long()
-                    diffusion_loss += diffusion.diffusion_loss(y, t, x)
-                diffusion_loss /= num_samples
+                if "diffusion" in which:
+                    diffusion_loss = 0.0
+                    num_samples = 10
+                    for _ in range(num_samples):
+                        t = torch.randint(0, diffusion.timesteps, (x.shape[0],), device=constants.DEVICE).long()
+                        diffusion_loss += diffusion.diffusion_loss(y, t, x)
+                    diffusion_loss /= num_samples
 
-                dfl_loss = task_loss_no_mean(z_star, y, params)
+                    dfl_loss = task_loss_no_mean(z_star, y, params)
 
-                # alpha = 0.9
-                # k = int((1 - alpha) * y.shape[0])
-                # tail_vals, _ = torch.topk(dfl_loss.sum(dim=1), k=k, largest=True)
-                # cvar = tail_vals.mean()
-                if args.pretrain_epochs == 0:
-                    dfl_grad_norm = get_grad_norm(dfl_loss.mean(), diffusion.model_net.parameters())
-                    mse_grad_norm = get_grad_norm(diffusion_loss, diffusion.model_net.parameters())
-                    # print(f"dfl_grad_norm = {dfl_grad_norm.item():.4f}, mse_grad_norm = {mse_grad_norm.item():.4f}")
-                    alpha = 0.1
-                    loss = alpha * (mse_grad_norm / dfl_grad_norm + 1e-8).detach() * dfl_loss.mean() + (1 - alpha) * diffusion_loss
-                    # loss = dfl_loss.mean()
+                    # alpha = 0.9
+                    # k = int((1 - alpha) * y.shape[0])
+                    # tail_vals, _ = torch.topk(dfl_loss.sum(dim=1), k=k, largest=True)
+                    # cvar = tail_vals.mean()
+                    if args.pretrain_epochs == 0:
+                        dfl_grad_norm = get_grad_norm(dfl_loss.mean(), diffusion.model_net.parameters())
+                        mse_grad_norm = get_grad_norm(diffusion_loss, diffusion.model_net.parameters())
+                        # print(f"dfl_grad_norm = {dfl_grad_norm.item():.4f}, mse_grad_norm = {mse_grad_norm.item():.4f}")
+                        alpha = 0.1
+                        loss = alpha * (mse_grad_norm / dfl_grad_norm + 1e-8).detach() * dfl_loss.mean() + (1 - alpha) * diffusion_loss
+                        # loss = dfl_loss.mean()
+                    else:
+                        dfl_grad_norm = get_grad_norm(dfl_loss.mean(), diffusion.model_net.parameters())
+                        mse_grad_norm = get_grad_norm(diffusion_loss, diffusion.model_net.parameters())
+                        # print(f"dfl_grad_norm = {dfl_grad_norm.item():.4f}, mse_grad_norm = {mse_grad_norm.item():.4f}")
+                        alpha = 0.2
+                        loss = alpha * (mse_grad_norm / dfl_grad_norm + 1e-8).detach() * dfl_loss.mean() + (1 - alpha) * diffusion_loss
+                        # loss = dfl_loss.mean()
+                    loss.backward()
                 else:
-                    dfl_grad_norm = get_grad_norm(dfl_loss.mean(), diffusion.model_net.parameters())
-                    mse_grad_norm = get_grad_norm(diffusion_loss, diffusion.model_net.parameters())
-                    # print(f"dfl_grad_norm = {dfl_grad_norm.item():.4f}, mse_grad_norm = {mse_grad_norm.item():.4f}")
-                    alpha = 0.2
-                    loss = alpha * (mse_grad_norm / dfl_grad_norm + 1e-8).detach() * dfl_loss.mean() + (1 - alpha) * diffusion_loss
-                    # loss = dfl_loss.mean()
-                loss.backward()
+                    if idx is None:
+                        z_star = layer(x)
+                    else:
+                        z_star = layer(x, idx=idx, epoch=epoch)
+                    loss = _dfl_loss_no_mean(z_star, y, params)
+                    loss.backward()
             
             grad_norm = torch.nn.utils.clip_grad_norm_(diffusion.model_net.parameters(), float('inf'))
 
@@ -652,6 +669,32 @@ def eval_net(which, model, variables, params, save_folder, mc_samples=None, solv
         Y_sched_test = Y_sched_test[0]
         test_loss_task = task_loss(
             Y_sched_test.float(), variables['Y_test_'], params)
+        
+        torch.save(train_loss_task.detach().cpu().numpy(), 
+            os.path.join(save_folder, '{}_train_task'.format(which)))
+        torch.save(test_loss_task.detach().cpu().numpy(), 
+            os.path.join(save_folder, '{}_test_task'.format(which)))
+    elif isinstance(model, model_classes.PolicyNet):
+        model.eval()    
+        y_preds_train = model(variables['X_train_'])
+        y_preds_test = model(variables['X_test_'])
+        
+        train_rmse = rmse_loss(y_preds_train, variables['Y_train_'])
+        test_rmse = rmse_loss(y_preds_test, variables['Y_test_'])
+
+        with open(
+            os.path.join(save_folder, '{}_train_rmse'.format(which)), 'wb') as f:
+            np.save(f, train_rmse)
+
+        with open(
+            os.path.join(save_folder, '{}_test_rmse'.format(which)), 'wb') as f:
+            np.save(f, test_rmse)
+        
+        train_loss_task = task_loss(
+            y_preds_train.float(), variables['Y_train_'], params)
+        
+        test_loss_task = task_loss(
+            y_preds_test.float(), variables['Y_test_'], params)
         
         torch.save(train_loss_task.detach().cpu().numpy(), 
             os.path.join(save_folder, '{}_train_task'.format(which)))

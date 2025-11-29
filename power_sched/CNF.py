@@ -27,7 +27,7 @@ def mlp(in_dim, hidden_dim, out_dim, n_layers=3):
 class _CondVecField(nn.Module):
     def __init__(self, x_dim, y_dim, hidden_dim):
         super().__init__()
-        self.net = mlp(x_dim + y_dim, hidden_dim, x_dim, n_layers=3)
+        self.net = mlp(x_dim + y_dim, hidden_dim, x_dim, n_layers=4)
         self._ctx = None  # (B, y_dim)
 
     def set_context(self, y):
@@ -59,9 +59,12 @@ class CNF_model(nn.Module):
         self.timesteps = timesteps
 
         self.vec_field = _CondVecField(x_dim, y_dim, hidden_dim)
+
+        noise = MultivariateNormal(loc=torch.zeros(x_dim, device=self.device),
+                           covariance_matrix=torch.eye(x_dim, device=self.device))
   
-        cnf = CNF(self.vec_field, trace_estimator=autograd_trace)
-        self.nde = NeuralODE(cnf, solver='dopri5', sensitivity='adjoint', atol=1e-4, rtol=1e-4)
+        cnf = CNF(self.vec_field, trace_estimator=hutch_trace, noise_dist=noise)
+        self.nde = NeuralODE(cnf, solver='dopri5', sensitivity='adjoint', atol=1e-4, rtol=1e-4, return_t_eval=False)
         self.flow = nn.Sequential(Augmenter(augment_idx=1, augment_dims=self.augment_dim), self.nde).to(self.device)
         self.prior = MultivariateNormal(loc=torch.zeros(x_dim, device=self.device),
                                        covariance_matrix=torch.eye(x_dim, device=self.device))
@@ -75,6 +78,8 @@ class CNF_model(nn.Module):
         y = y.to(self.device)
         self._set_ctx(y)
         out = self.flow(x)        # (B, 1 + x_dim)
+        if out.dim() == 3:
+            out = out[-1]
         delta_logdet = out[:, 0]
         z = out[:, 1:]
         logprob = self.prior.log_prob(z) - delta_logdet
@@ -109,56 +114,57 @@ class CNF_model(nn.Module):
         return x_samples
 
     def pretrain_CNF(self, X_train2_, Y_train2_, X_hold2_, Y_hold2_, base_save, args, two_stage=False):
-        """
-        Supervision is only used for the condition y, not entered into the explicit loss (pure generative CNF).
-        Need args:
-          lr=2e-3, weight_decay=1e-5, epochs=100, batch_size=256, patience=20,
-          device="cuda", warmup_epochs=20, warmup_lr=5e-3
-        """
+        args.pretrain_model_path = os.path.join(base_save, f'cnf_model_pretrained_{args.pretrain_epochs}.pth')
+        if os.path.exists(args.pretrain_model_path) and not two_stage:
+            self.flow.load_state_dict(torch.load(args.pretrain_model_path, map_location=self.device))
+        else:
+            print(f"Model not found at {args.pretrain_model_path}, training from scratch")
+            print("--------------------------------")
+            os.makedirs(base_save, exist_ok=True)
+            # pretrain_optimizer = torch.optim.AdamW(self.flow.parameters(), lr=1e-3, weight_decay=1e-4)
+            pretrain_optimizer = torch.optim.Adam(self.flow.parameters(), lr=1e-3)
+            best_val = float('inf')
+            best_state = None
+            pretrain_data_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(X_train2_, Y_train2_), batch_size=512, shuffle=True)
+            
+            @torch.no_grad()
+            def eval_nll():
+                self.eval()
+                total, n = 0.0, 0
+                x_eval, y_eval = X_hold2_.to(self.device), Y_hold2_.to(self.device)
+                loss = self.train_loss(x_eval, y_eval)
+                total += loss.item() * x_eval.size(0)
+                n += x_eval.size(0)
+                return total / max(1, n)
 
-        os.makedirs(base_save, exist_ok=True)
-        # pretrain_optimizer = torch.optim.AdamW(self.model_net.parameters(), lr=1e-3, weight_decay=1e-4)
-        pretrain_optimizer = torch.optim.Adam(self.model_net.parameters(), lr=1e-3)
-        best_val = float('inf')
-        best_state = None
-        pretrain_data_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(X_train2_, Y_train2_), batch_size=512, shuffle=True)
+            def run_loop(max_epochs=100):
+                best, best_ep, no_imp = float('inf'), -1, 0
+                for ep in range(1, max_epochs + 1):
+                    self.train()
+                    t0 = time.time()
+                    for xb, yb in pretrain_data_loader:
+                        loss = self.train_loss(xb, yb)
+                        pretrain_optimizer.zero_grad()
+                        loss.backward()
+                        pretrain_optimizer.step()
+                    if (ep + 1) % 10 == 0:
+                        val = eval_nll()
+                        print(f"Epoch {ep}, val NLL = {val:.4f}")
+                    dt = time.time() - t0
+                    print(f"[cCNF] epoch {ep:03d}/{max_epochs}, train loss = {loss.item(): .4f}, {dt:.2f}s")
+                    # if val + 1e-6 < best:
+                    #     best, best_ep, no_imp = val, ep, 0
+                    #     torch.save({"state_dict": self.state_dict(), "val_nll": best, "epoch": ep}, best_path)
+                    # else:
+                    #     no_imp += 1
+                    #     if no_imp >= patience:
+                    #         print(f"[cCNF] early stop @ {ep}, best {best_ep}, val={best:.4f}")
+                    #         break
+                # if os.path.exists(best_path):
+                #     ckpt = torch.load(best_path, map_location=self.device)
+                #     self.load_state_dict(ckpt["state_dict"])
+                #     print(f"[cCNF] loaded best (epoch={ckpt.get('epoch','?')}, val={ckpt.get('val_nll','?'):.4f})")
+
+            run_loop()
+            torch.save(self.flow.state_dict(), os.path.join(base_save, f'cnf_model_pretrained_{args.pretrain_epochs}.pth'))
         
-        @torch.no_grad()
-        def eval_nll():
-            self.eval()
-            total, n = 0.0, 0
-            x_eval, y_eval = X_hold2_.to(self.device), Y_hold2_.to(self.device)
-            loss = self.train_loss(x_eval, y_eval)
-            total += loss.item() * x_eval.size(0)
-            n += x_eval.size(0)
-            return total / max(1, n)
-
-        def run_loop(max_epochs=100):
-            best, best_ep, no_imp = float('inf'), -1, 0
-            for ep in range(1, max_epochs + 1):
-                self.train()
-                t0 = time.time()
-                for xb, yb in pretrain_data_loader:
-                    loss = self.train_loss(xb, yb)
-                    pretrain_optimizer.zero_grad()
-                    loss.backward()
-                    pretrain_optimizer.step()
-                val = eval_nll()
-                dt = time.time() - t0
-                print(f"[cCNF] epoch {ep:03d}/{max_epochs}, val NLL={val:.4f}, {dt:.2f}s")
-                # if val + 1e-6 < best:
-                #     best, best_ep, no_imp = val, ep, 0
-                #     torch.save({"state_dict": self.state_dict(), "val_nll": best, "epoch": ep}, best_path)
-                # else:
-                #     no_imp += 1
-                #     if no_imp >= patience:
-                #         print(f"[cCNF] early stop @ {ep}, best {best_ep}, val={best:.4f}")
-                #         break
-            # if os.path.exists(best_path):
-            #     ckpt = torch.load(best_path, map_location=self.device)
-            #     self.load_state_dict(ckpt["state_dict"])
-            #     print(f"[cCNF] loaded best (epoch={ckpt.get('epoch','?')}, val={ckpt.get('val_nll','?'):.4f})")
-
-        run_loop()
-        torch.save(self.flow.state_dict(), os.path.join(base_save, f'cnf_model_pretrained_{args.pretrain_epochs}.pth'))
-    

@@ -1,7 +1,7 @@
 import torch
 
 USE_GPU = torch.cuda.is_available()
-DEVICE = None
+DEVICE = "cuda:7"
 # DEVICE = 'cuda:6' if USE_GPU else 'cpu'
 def set_device(device_id):
     global DEVICE

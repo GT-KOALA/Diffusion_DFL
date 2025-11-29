@@ -65,6 +65,9 @@ python main_toy.py --task task_net_deterministic_mlp
 python main_toy.py --task two_stage_diffusion &
 python main_toy.py --task two_stage_mlp &
 python main_toy.py --task two_stage_gaussian &
+
+# Policy learning
+python main_toy.py --task policy_learning &
 ```
 
 Useful flags (subset):
@@ -117,6 +120,9 @@ python main.py --task task_net_deterministic_mlp
 python main.py --task two_stage_diffusion &
 python main.py --task two_stage_mlp &
 python main.py --task two_stage_gaussian &
+
+# Policy learning
+python main.py --task policy_learning &
 ```
 
 Useful flags (subset):
@@ -178,6 +184,9 @@ python main.py --task task_net_deterministic_mlp --n 50 --epochs 50
 python main.py --task two_stage_diffusion &
 python main.py --task two_stage_mlp &
 python main.py --task two_stage_gaussian &
+
+# Policy learning
+python main.py --task policy_learning &
 ```
 
 Useful flags (subset):
@@ -199,8 +208,8 @@ Useful flags (subset):
 
 ## Plot figures in paper
 
-- Figure 1: run plot_motivation.ipynb in ./synthetic_example
-- Figure 2:
+- Figure 1: plot_motivation.ipynb in ./synthetic_example
+- Figure 2: plot_cos_sim.py in ./synthetic_example
 - Figure 3: plot_compare_resample.ipynb in ./power_sched
 - Figure 4: plot_compare_sf_samples_size.ipynb in ./power_sched
 - Figure 5: plot_multi_portfolio.ipynb in ./stock_portfolio

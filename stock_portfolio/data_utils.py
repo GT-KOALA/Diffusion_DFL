@@ -224,7 +224,7 @@ class IndexDataLoader(object):
         print(self.torch_file)
         if not self.overwrite and os.path.exists(self.torch_file):
             print("Loading pytorch data...")
-            feature_mat, target_mat, feature_cols, covariance_mat, target_names, dates, symbols = torch.load(self.torch_file)
+            feature_mat, target_mat, feature_cols, covariance_mat, target_names, dates, symbols = torch.load(self.torch_file, weights_only=False)
         else:
             price_feature_df = self.get_price_feature_df()
             target_names = ["next1_return"]

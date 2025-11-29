@@ -24,7 +24,7 @@ def get_vars_scalar_out(batch_sz, X_test_t, Y_test_t):
 
 # General batch evaluation
 def get_cost_helper(batch_sz, epoch, model, X_test_t, Y_test_t, 
-    loss_fn, var_getter_fn):
+    loss_fn, var_getter_fn, params=None):
 
     test_cost = 0
 
@@ -44,13 +44,13 @@ def get_cost_helper(batch_sz, epoch, model, X_test_t, Y_test_t,
         batch_targets_.data[:] = Y_test_t[i:i+size]
 
         preds = model(batch_data_)
-        batch_cost = loss_fn(preds, batch_targets_)
+        batch_cost = loss_fn(preds, batch_targets_, params).sum()
 
         # Keep running average of loss
-        test_cost += (batch_cost - test_cost) * size / (i + size)
+        test_cost += (batch_cost.item() - test_cost) * size / (i + size)
 
-    print('TEST SET RESULTS:' + ' ' * 20)
-    print('Average loss: {:.4f}'.format(test_cost.item()))
+    # print('TEST SET RESULTS:' + ' ' * 20)
+    # print('Average loss: {:.4f}'.format(test_cost))
 
     return test_cost
 
@@ -78,23 +78,22 @@ def get_cost_helper_diffusion(batch_sz, epoch, model, X_test_t, Y_test_t,
         batch_cost = loss_fn(preds, batch_targets_)
 
         # Keep running average of loss
-        test_cost += (batch_cost - test_cost) * size / (i + size)
+        test_cost += (batch_cost.item() - test_cost) * size / (i + size)
 
-    print('TEST SET RESULTS:' + ' ' * 20)
-    print('Average loss: {:.4f}'.format(test_cost.item()))
+    # print('TEST SET RESULTS:' + ' ' * 20)
+    # print('Average loss: {:.4f}'.format(test_cost))
 
     return test_cost
 
-def get_cost(batch_sz, epoch, model, X_test_t, Y_test_t, loss_fn, is_diffusion=False):
-    # TODO: change to isinstance(model, DiffusionCvxpyModule)
-    if is_diffusion:
-        return get_cost_helper_diffusion(batch_sz, epoch, model, X_test_t, Y_test_t, 
-            loss_fn, get_vars)
-    else:
+def get_cost(batch_sz, epoch, model, X_test_t, Y_test_t, loss_fn, params, is_diffusion=False):
+    if not is_diffusion:
         return get_cost_helper(batch_sz, epoch, model, X_test_t, Y_test_t, 
-            loss_fn, get_vars)
+            loss_fn, get_vars, params=params)
+    else:
+        return get_cost_helper_diffusion(batch_sz, epoch, model, X_test_t, Y_test_t, 
+            loss_fn, get_vars, params)
 
-def get_cost_nll(batch_sz, epoch, model, X_test_t, Y_test_t, loss_fn):
+def get_cost_nll(batch_sz, epoch, model, X_test_t, Y_test_t, loss_fn, params):
     return get_cost_helper(batch_sz, epoch, model, X_test_t, Y_test_t, 
-        loss_fn, get_vars_scalar_out)
+        loss_fn, get_vars_scalar_out, params)
 

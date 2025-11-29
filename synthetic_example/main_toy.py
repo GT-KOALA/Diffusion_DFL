@@ -19,6 +19,8 @@ from constants import *
 from solver_mlp import MLPCvxpyModule, MLPCvxpyModule_distr
 from data_gen import gen_toy_data, comp_true_obj, gen_toy_data_simple, generate_data, z_star_empirical, generate_data_multi_dim
 from diffusion_opt import Diffsion
+from solver_reparam_kkt_cnt import CNFCvxpyModule
+from policy_learning import run_policy_net
 
 from util import IndexedDataset
 
@@ -30,7 +32,7 @@ warnings.filterwarnings("ignore")
 def main():
     parser = argparse.ArgumentParser(
         description='Run electricity scheduling task net experiments.')
-    parser.add_argument('--task', type=str, default='diffusion', help='rmse, weighted_rmse, task_net, task_net_ns, diffusion, diffusion_resample, two_stage_mlp, two_stage_gaussian, two_stage_diffusion, task_net_mlp_gaussian_reparam, task_net_mlp_gaussian_distr, task_net_deterministic_mlp')
+    parser.add_argument('--task', type=str, default='policy_learning', help='rmse, weighted_rmse, task_net, task_net_ns, diffusion, diffusion_resample, two_stage_mlp, two_stage_gaussian, two_stage_diffusion, task_net_mlp_gaussian_reparam, task_net_mlp_gaussian_distr, task_net_deterministic_mlp')
     parser.add_argument('--save', type=str, metavar='save-folder', help='prefix to add to save path')
     parser.add_argument('--nRuns', type=int, default=10, metavar='runs', help='number of runs')
     parser.add_argument('--mc_samples', type=int, default=30, metavar='mc_samples', help='number of MC samples')
@@ -205,6 +207,12 @@ def main():
             print("--------------------------------")
             model_rmse_weighted = nets_toy.run_weighted_rmse_net(X_train, Y_train, X_test, Y_test, params)
             nets_toy.eval_net("weighted_rmse_net", model_rmse_weighted, variables_rmse, params, save_folder)
+        elif args.task == "policy_learning":
+            print("--------------------------------")
+            print("Run policy learning.")
+            print("--------------------------------")
+            policy_model = run_policy_net(X_train_, Y_train_, X_test_, Y_test_, params)
+            nets_toy.eval_net("policy_learning", policy_model, variables_rmse, params, save_folder)
         else:
             # f_evals_regret, f_evals_env, z_star_evals_regret, z_star_evals_env = comp_true_obj(X_test_, Y_test_, params, seed=args.seed, device=DEVICE, simple=is_simple)
             # print(f"True obj: {f_evals_regret.mean():.4f}, {f_evals_env.mean():.4f}")
@@ -402,6 +410,23 @@ def main():
                 layer_reparam = DiffusionCvxpyModule_reparam(diffusion, params, args.mc_samples, distr_est=False, resample=False)
                 which = f"diffusion_grad_comparison_{args.data_size}"
                 nets_toy.run_task_net_diffusion(diffusion, train_loader, hold_loader, test_loader, layer_distr_10, params, args, which=which, other_layers={'layer_distr_10': layer_distr_10, 'layer_distr_50': layer_distr_50, 'layer_distr_100': layer_distr_100, 'layer_distr_500': layer_distr_500, 'layer_resample': layer_resample, 'layer_reparam': layer_reparam}, save_folder=save_folder)
+            elif args.task == "cnf":
+                print("--------------------------------")
+                print("Run task net with CNF.")
+                print("--------------------------------")
+                cnf = CNF_model(x_dim=X_train2_.shape[1], y_dim=Y_train2_.shape[1], device=DEVICE)
+                cnf.pretrain_CNF(X_train2_, Y_train2_, X_hold2_, Y_hold2_, base_save, args)
+
+                batch_size = args.batch_size
+                train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(X_train2_, Y_train2_), batch_size=batch_size, shuffle=True)
+                hold_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(X_hold2_, Y_hold2_), batch_size=batch_size, shuffle=True)
+                test_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(X_test_, Y_test_), batch_size=batch_size, shuffle=True)
+
+                layer = CNFCvxpyModule(cnf, params, args.mc_samples, distr_est=args.use_distr_est, resample=args.task == "diffusion_resample")
+                which = "cnf"
+                nets_toy.run_task_net_diffusion(cnf, train_loader, hold_loader, test_loader, layer, params, args, which=which, save_folder=save_folder)
+                torch.save(cnf.flow.state_dict(), os.path.join(save_folder, f'{which}.pth'))
+                nets_toy.eval_diffusion(which, cnf, variables_task, params, args.mc_samples, save_folder)
     # plot.plot_results(map(
     #     lambda x: os.path.join(base_save, str(x)), range(args.nRuns)), base_save)
 

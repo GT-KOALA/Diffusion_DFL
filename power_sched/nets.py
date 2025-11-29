@@ -1315,6 +1315,35 @@ def eval_net(which, model, variables, params, save_folder, mc_samples=None):
             os.path.join(save_folder, '{}_test_task'.format(which)))
 
         print(f"test_loss_task = {test_loss_task.sum().item():.4f}")
+    elif isinstance(model, model_classes.PortfolioPolicyNet):
+        model.eval()
+        y_preds_train = model(variables['X_train_'])
+        y_preds_test = model(variables['X_test_'])
+        
+        train_rmse = rmse_loss(y_preds_train, variables['Y_train_'])
+        test_rmse = rmse_loss(y_preds_test, variables['Y_test_'])
+        
+        with open(
+            os.path.join(save_folder, '{}_train_rmse'.format(which)), 'wb') as f:
+            np.save(f, train_rmse)
+        
+        with open(
+            os.path.join(save_folder, '{}_test_rmse'.format(which)), 'wb') as f:
+            np.save(f, test_rmse)
+            
+        train_loss_task = task_loss(
+            y_preds_train.float(), variables['Y_train_'], params)
+        test_loss_task = task_loss(
+            y_preds_test.float(), variables['Y_test_'], params)
+        
+        torch.save(train_loss_task.detach().cpu().numpy(), 
+            os.path.join(save_folder, '{}_train_task'.format(which)))
+        torch.save(test_loss_task.detach().cpu().numpy(), 
+            os.path.join(save_folder, '{}_test_task'.format(which)))
+        
+        print(f"test_loss_task = {test_loss_task.sum().item():.4f}")
+    else:
+        raise ValueError(f"Unsupported model type: {type(model)}")
 
 if __name__ == "__main__":
     from main import load_data_with_features
