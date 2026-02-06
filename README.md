@@ -234,12 +234,11 @@ Useful flags (subset):
 ## Citing
 If you use Diffusion-DFL for research, please cite [our paper](https://openreview.net/forum?id=uhv3f80jmG):
 ```
-@inproceedings{
-anonymous2026diffusiondfl,
-title={Diffusion-{DFL}: Decision-focused Diffusion Models for Stochastic Optimization},
-author={Zhao, Zihao and Yeh, Christopher and Kong, Lingkai and Wang, Kai},
-booktitle={The Fourteenth International Conference on Learning Representations},
-year={2026},
-url={https://openreview.net/forum?id=uhv3f80jmG}
+@inproceedings{zhao2026diffusion,
+    title={Diffusion-{DFL}: Decision-focused Diffusion Models for Stochastic Optimization},
+    author={Zhao, Zihao and Yeh, Christopher and Kong, Lingkai and Wang, Kai},
+    booktitle={The Fourteenth International Conference on Learning Representations},
+    year={2026},
+    url={https://openreview.net/forum?id=uhv3f80jmG}
 }
 ```
