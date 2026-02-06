@@ -1,37 +1,48 @@
-# Diffusion Decision-Focused Learning Implementations
+# Diffusion-DFL
 
-This repo contains three self-contained experiments comparing **decision-focused learning** approaches (Diffusion models, Gaussian, and deterministic MLP) on synthetic and real optimization tasks. Each folder can be run independently.
+Official implementation of **Diffusion-DFL: Decision-focused Diffusion Models for Stochastic Optimization** ([ICLR 2026](https://openreview.net/forum?id=uhv3f80jmG)). This repository provides three self-contained experiments that compare decision-focused learning with diffusion models, Gaussian predictors, and deterministic MLPs on synthetic and real stochastic optimization tasks. Each experiment folder can be run independently.
 
-## Environment
+**Further reading:** For a detailed explanation of the method, see our [blog post](https://chrisyeh96.github.io/2025/12/03/diffusion-dfl.html).
+
+---
+
+## Installation
+
+**Requirements**
 
 - Python 3.9+
 - PyTorch (GPU recommended)
 - NumPy, Pandas, TQDM
-- Joblib (for parallelization, version >= 1.5.0)
-- QPTH, CVXPY (and optionally CVXPyLayers for the portfolio task)
+- Joblib (≥ 1.5.0, for parallelization)
+- QPTH, CVXPY (optionally CVXPyLayers for the portfolio task)
 - scikit-learn (for power scheduling)
-- Weights & Biases (optional; can be set to offline)
+- Weights & Biases (optional; can run in offline mode)
 
-Quick install (example):
+**Install:**
 
 ```bash
-pip install torch numpy pandas tqdm joblib scikit-learn cvxpy qpth cvxpylayers wandb
+git clone git@github.com:GT-KOALA/Diffusion_DFL.git
 ```
 
-**GPU selection**: pass `--cuda_device <id>` to scripts (or see each folder’s `constants.py`).
+For a minimal install without W&B or CVXPyLayers:
 
-**Disable W&B (optional):**
+```bash
+pip install torch numpy pandas tqdm joblib scikit-learn cvxpy qpth
+```
+
+**GPU:** Pass `--cuda_device <id>` to scripts, or set the device in each folder’s `constants.py`.
+
+**Weights & Biases (optional):** To disable cloud logging:
 
 ```bash
 export WANDB_MODE=offline
-# or set WANDB_API_KEY in your environment if you want to log runs
 ```
 
 ---
 
 ## 1) `synthetic_example/`
 
-Toy stochastic decision task to illustrate when **stochastic** training (diffusion / distributional) can outperform **deterministic** predictors under task loss. Includes a differentiable lower-level solver via KKT.
+A toy stochastic decision task that illustrates when **stochastic** predictors (diffusion or Gaussian) outperform **deterministic** ones under task loss. The lower-level optimization is differentiable via KKT conditions, enabling end-to-end decision-focused training.
 
 **Key files**
 
@@ -58,7 +69,7 @@ python main_toy.py --task task_net_mlp_gaussian_distr
 # Gaussian (reparameterization estimator)
 python main_toy.py --task task_net_gaussian_reparam
 
-# Deterministic MLP (determinstic optimization)
+# Deterministic MLP (deterministic optimization)
 python main_toy.py --task task_net_deterministic_mlp
 
 # Two-stages
@@ -85,7 +96,7 @@ Useful flags (subset):
 
 ## 2) `power_sched/`
 
-Simplified **power grid scheduling** task (time-series features & decisions) with a differentiable lower-level program. Compares diffusion (distributional & point), Gaussian (reparam / score-function), and deterministic MLP.
+A simplified **power grid scheduling** task with time-series features and decisions. The downstream optimization is implemented as a differentiable program. Compares diffusion (score-function and reparameterization), Gaussian (both estimators), and deterministic MLP baselines, plus two-stage and policy-learning variants.
 
 **Key files**
 
@@ -113,7 +124,7 @@ python main.py --task task_net_mlp_gaussian_distr
 # Gaussian (reparameterization estimator)
 python main.py --task task_net_gaussian_reparam
 
-# Deterministic MLP (determinstic optimization)
+# Deterministic MLP (deterministic optimization)
 python main.py --task task_net_deterministic_mlp
 
 # Two-stages
@@ -140,7 +151,7 @@ Useful flags (subset):
 
 ## 3) `stock_portfolio/`
 
-**Mean-variance portfolio optimization** with differentiable solver layers and diffusion/Gaussian/deterministic predictors. Data loader builds features/targets from historical prices (Quandl).
+**Mean-variance portfolio optimization** with a differentiable KKT-based solver. Predictors for return/uncertainty include diffusion, Gaussian, and deterministic MLP. The data loader fetches and preprocesses historical prices (Quandl) to build features and targets.
 
 **Before you run**
 
@@ -177,7 +188,7 @@ python main.py --task task_net_mlp_gaussian_distr --n 50 --epochs 50
 # Gaussian (reparameterization estimator)
 python main.py --task task_net_gaussian_reparam --n 50 --epochs 50
 
-# Deterministic MLP (determinstic optimization)
+# Deterministic MLP (deterministic optimization)
 python main.py --task task_net_deterministic_mlp --n 50 --epochs 50
 
 # Two-stages
@@ -213,9 +224,22 @@ Useful flags (subset):
 - Figure 3: plot_compare_resample.ipynb in ./power_sched
 - Figure 4: plot_compare_sf_samples_size.ipynb in ./power_sched
 - Figure 5: plot_multi_portfolio.ipynb in ./stock_portfolio
-
+<!-- 
 ## Tips & Troubleshooting
 
 - If CVXPY complains about solvers, install one of `OSQP`, `ECOS`, or a commercial solver you have licenses for (and set `CVXPY` default accordingly).
 - For reproducibility, use `--seed` and fix CUDA device with `--cuda_device`.
-- On clusters, ensure CUDA visibility (`CUDA_VISIBLE_DEVICES`) matches `--cuda_device`.
+- On clusters, ensure CUDA visibility (`CUDA_VISIBLE_DEVICES`) matches `--cuda_device`. -->
+
+## Citing
+If you use Diffusion-DFL for research, please cite [our paper](https://openreview.net/forum?id=uhv3f80jmG):
+```
+@inproceedings{
+anonymous2026diffusiondfl,
+title={Diffusion-{DFL}: Decision-focused Diffusion Models for Stochastic Optimization},
+author={Zhao, Zihao and Yeh, Christopher and Kong, Lingkai and Wang, Kai},
+booktitle={The Fourteenth International Conference on Learning Representations},
+year={2026},
+url={https://openreview.net/forum?id=uhv3f80jmG}
+}
+```
